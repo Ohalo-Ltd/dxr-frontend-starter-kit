@@ -160,15 +160,62 @@ you to handle both.
 
 ## File content
 
-`GET /api/v1/files/{id}/content` returns the original bytes. This kit does not
-call it, and fixture mode does not simulate it.
+`GET /api/v1/files/{id}/content` returns the original bytes. This is the most
+exposing call in the API, and the kit wires it up in the detail panel's **Content**
+tab — see `src/components/files/FileContentTab.tsx`.
 
-If a module needs a preview, treat it as a separate decision with its own review:
-fetch only on explicit user intent, never automatically; prefer
-`redacted-text` with a redactor over raw content; render as inert text, never as
-HTML; and treat PDFs, Office documents, and SVGs as active content requiring a
-sandbox. An empty `redactedText` is a normal outcome for a discovery-only scan,
-an unsupported format, or an image-only PDF.
+The rules it follows are worth keeping in anything you build:
+
+**Nothing is fetched automatically.** Opening a file shows only what the search
+already returned. Selecting the Content tab still fetches no content. Each of the
+three actions below is a separate, deliberate click:
+
+| Action | Exposure | Rendering |
+| --- | --- | --- |
+| Load redacted text | Masked by a server-side redactor | Inert text |
+| View original text | Unredacted | Inert text, `text/*` only |
+| Download original | Unredacted raw bytes | Never rendered |
+
+**Redacted is the default.** It is offered first and it is the primary button.
+`/redacted-text` needs a `redactor_id` from `/redactors`; different profiles mask
+different things, so the profile is a visible choice rather than a hidden
+constant.
+
+**Content is classified before it is trusted.** `classifyContent()` in
+`src/dxr/client.ts` sorts a file into `text`, `active`, or `binary` using both the
+declared media type *and* the file extension — **the more dangerous answer wins**.
+A datasource that reports `logo.svg` as `text/plain` does not get it rendered.
+
+- `text` — safe to render as inert React text.
+- `active` — PDF, Office, SVG, HTML, XML, archives, email. Carries scripting or a
+  complex parser. **Never rendered inline**, whatever the media type claims. The
+  UI says so and offers only a download.
+- `binary` — everything else, including images. Download only.
+
+Rendering an `active` format needs a separately threat-modelled sandbox. That is
+a real project, not a component.
+
+**The byte cap is enforced while streaming.** `Content-Length` is a claim, not a
+guarantee, so `getFileContent` checks the header *and* the running total, and
+aborts the reader mid-download when the cap is passed. A post-download check
+cannot prevent memory exhaustion. The default is 8 MB.
+
+**The download never touches the document.** Bytes go into a Blob with a
+generic `application/octet-stream` type and out through an `<a download>`; nothing
+is parsed or attached to the DOM. A server-supplied `Content-Disposition`
+filename is stripped of any path first — it is untrusted input.
+
+**An empty `redactedText` is a normal outcome**, not an error: a discovery-only
+scan, an unsupported format, or an image-only PDF all produce no extractable
+text. The UI says which of those it might be.
+
+Metadata read, content read, and export are separate permission boundaries. What
+this panel offers is presentation; the server authorises each operation.
+
+In fixture mode, text content comes from `fixtures/content/<fileId>.txt`, PDFs get
+a generated placeholder so the active-content path is demonstrable offline, and
+files with no fixture return `404` — which is also what a real instance does for a
+file whose bytes it cannot produce.
 
 ## Errors
 

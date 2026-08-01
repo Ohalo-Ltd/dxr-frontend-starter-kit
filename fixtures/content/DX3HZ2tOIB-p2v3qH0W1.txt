@@ -1,0 +1,12 @@
+# Retention schedule
+
+| Record class        | Retention | Disposal      |
+| ------------------- | --------- | ------------- |
+| Supplier invoices   | 7 years   | Secure delete |
+| Employment records  | 6 years   | Secure delete |
+| Site survey notes   | 3 years   | Secure delete |
+| Marketing consent   | Until withdrawn | Secure delete |
+
+Questions to the records team at records@example.com.
+
+-- synthetic content, generated for the starter kit fixtures --

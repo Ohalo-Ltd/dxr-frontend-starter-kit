@@ -154,8 +154,27 @@ Everything it shows came from the row already streamed by the search, so opening
 it costs **no** additional request. The API has no single-file metadata endpoint,
 and re-querying by `fileId` to populate a detail view would be waste.
 
-File **content** is deliberately absent. Fetching it is a separate decision with
-its own exposure and rendering risks: fetch only on explicit user intent, prefer
-`redacted-text` with a redactor over raw bytes, and render as inert text. Do not
-render HTML, SVG, PDF, Office documents, email, or archives — those need a
-separately threat-modelled sandboxed viewer.
+## Content tab
+
+`FileContentTab` is the detail panel's last tab, and reading a file's bytes is
+deliberately a three-step escalation: **load redacted text** (primary), **view
+original text** (`text/*` only), **download original** (anything).
+
+The properties to preserve if you adapt it:
+
+- Opening the panel, and selecting the tab, fetch no content. Only a button does.
+- Redacted is the default and the primary action. The redactor profile is a
+  visible choice, because different profiles mask different things.
+- `classifyContent()` decides what may render, from the media type *and* the
+  extension, with the more dangerous answer winning. Active formats — PDF, Office,
+  SVG, HTML, archives — are never rendered inline and the UI says why.
+- The response is re-classified after the fetch. Search metadata is a hint; the
+  server's declared type on the actual response is what governs.
+- Text renders through React as inert text, truncated past 200,000 characters.
+  Invalid UTF-8 is refused rather than shown as replacement characters.
+- Downloads go through a Blob and an `<a download>`, so bytes never enter the
+  document, and the server-supplied filename is stripped of any path first.
+- Every request is cancellable and cancels its predecessor.
+
+Rendering an active format needs a separately threat-modelled sandboxed viewer.
+Do not add one to this component.

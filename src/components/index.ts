@@ -7,6 +7,7 @@
  * to absorb module-specific behaviour — build that in the module from `src/ui`
  * primitives instead.
  */
+export { FileContentTab } from "./files/FileContentTab";
 export { FileDetailPanel } from "./files/FileDetailPanel";
 export {
 	FilesResultsTable,

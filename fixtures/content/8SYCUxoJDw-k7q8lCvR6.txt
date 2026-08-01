@@ -1,0 +1,18 @@
+SITE SURVEY — NORTHERN DEPOT
+Reference: SS-2026-0721
+Surveyor: Field Engineer (field.engineer@example.com)
+Date: 21 July 2026
+
+1. ACCESS
+Gate code 4417 issued to the contractor for the duration of works.
+Site contact reachable on 07700 900412 during working hours.
+
+2. CONDITION
+Loading bay resurfacing complete. Drainage channel on the east side remains
+partially blocked; recommend jetting before the winter period.
+
+3. FOLLOW-UP
+Quotation to be sent to procurement@example.com by 4 August.
+Approval reference pending from J. Okafor.
+
+-- synthetic content, generated for the starter kit fixtures --

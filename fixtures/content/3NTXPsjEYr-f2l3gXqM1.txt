@@ -1,0 +1,7 @@
+employee_id,full_name,national_id,email,start_date
+E-1041,A. Mensah,432-11-8890,a.mensah@example.com,2026-05-04
+E-1042,R. Lindqvist,558-27-1203,r.lindqvist@example.com,2026-05-11
+E-1043,T. Oyelaran,610-44-7751,t.oyelaran@example.com,2026-05-18
+E-1044,M. Castellanos,701-92-3348,m.castellanos@example.com,2026-06-01
+
+-- synthetic content, generated for the starter kit fixtures --
