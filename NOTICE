@@ -1,0 +1,15 @@
+Data X-Ray frontend starter kit
+Copyright (c) 2026 Ohalo Ltd.
+
+This product is licensed under the MIT License. See LICENSE.
+
+The MIT License covers this starter kit only.
+
+Data X-Ray, its API, and its OpenAPI specification are proprietary to Ohalo Ltd.
+and are licensed separately. Nothing in this repository grants any right to
+access or use Data X-Ray itself. Access to a Data X-Ray instance and an API
+credential are obtained under a separate agreement with Ohalo.
+
+Third-party dependencies remain under their own licenses. Run
+`npm run security:licenses` to enumerate them; the gate fails on any package
+that declares no license metadata.

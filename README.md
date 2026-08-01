@@ -154,3 +154,19 @@ coding agents read.
 Node 24.15.0 and npm 12.0.1, both pinned exactly and verified by
 `npm run verify:toolchain`. `scripts/bootstrap-npm.sh` installs the pinned npm
 from an integrity-checked tarball if you need it.
+
+## Contributing
+
+Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). `main`
+requires a passing CI run and an approving review from the Ohalo FDE team.
+
+Report a security issue privately to **security@ohalo.co**, never through an
+issue or a pull request. See [SECURITY.md](SECURITY.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+That covers this starter kit only. Data X-Ray, its API, and its specification are
+proprietary to Ohalo Ltd. and licensed separately; access to an instance and an
+API credential come under a separate agreement. See [NOTICE](NOTICE).
