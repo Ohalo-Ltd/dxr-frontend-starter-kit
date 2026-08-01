@@ -96,7 +96,11 @@ Reject an applicable change that:
 - uses a row index as identity;
 - streams without a hard row cap, or fails to cancel a superseded request;
 - treats a hidden control as authorization;
-- fetches file content automatically rather than on explicit user intent;
+- fetches file content automatically rather than on explicit user intent, or
+  offers the unredacted original without a warning and a separate action;
+- renders an active format (PDF, Office, SVG, HTML, XML, archive) inline, or
+  trusts a declared media type over a more dangerous file extension;
+- caps a download after reading it rather than while streaming;
 - renders an API error or document content as HTML;
 - makes a consequential selection or mutation ambiguous, or applies a destructive
   change without proportionate confirmation;

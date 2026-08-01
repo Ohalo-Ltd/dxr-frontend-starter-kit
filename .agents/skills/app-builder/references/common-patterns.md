@@ -129,14 +129,29 @@ should cost no request.
 
 ## File content
 
-The kit does not fetch file content, and that is a deliberate default.
+The most exposing thing the API does. `FileContentTab` is the reference; these
+are the rules it follows.
 
-If an application needs it, treat it as a separate decision with its own review:
-fetch only on explicit user intent, never automatically; prefer
-`/redacted-text` with a redactor over raw bytes; enforce a byte limit while
-streaming rather than after; render as inert text; and treat HTML, SVG, PDF,
-Office documents, email, and archives as active content requiring a separately
-threat-modelled sandbox.
+- **Nothing automatic.** Opening a record, and selecting a content view, must
+  fetch nothing. Only an explicit action does.
+- **Redacted first.** Offer `/redacted-text` with a chosen redactor as the primary
+  path, and the unredacted original as a secondary one behind its own click and
+  its own warning. Make the redactor profile visible: profiles mask different
+  things.
+- **Classify before rendering.** Decide from the declared media type *and* the
+  file extension, and let the more dangerous answer win. HTML, SVG, PDF, Office,
+  XML, email, and archives are active content: never render them inline, whatever
+  the media type says. Images and unknown types are download-only.
+- **Re-classify the response.** Search metadata is a hint; the type on the actual
+  response governs.
+- **Cap while streaming.** Check `Content-Length` *and* the running total, and
+  abort the reader when the cap is passed. A post-download check cannot prevent
+  memory exhaustion.
+- **Render as inert text only.** Truncate very large strings. Refuse invalid
+  UTF-8 rather than displaying replacement characters.
+- **Download without touching the document.** Blob plus `<a download>`; strip any
+  path from a server-supplied filename before using it.
+- **Cancel.** Every request is abortable and supersedes the previous one.
 
 An empty `redactedText` is a normal outcome for a discovery-only scan, an
 unsupported format, or an image-only PDF. Say that, rather than showing an error.

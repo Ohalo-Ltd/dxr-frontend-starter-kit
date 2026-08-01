@@ -903,6 +903,17 @@ h1 {
 	word-break: break-word;
 }
 
+.content-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--app-space-3);
+}
+
+.content-actions .field {
+	min-width: 14rem;
+}
+
 .detail-panel__permission,
 .detail-panel__empty {
 	margin: 0;

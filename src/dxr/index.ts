@@ -13,10 +13,16 @@ export {
 	toCatalog,
 } from "./catalog";
 export {
+	type ContentDisposition,
+	classifyContent,
+	DEFAULT_MAX_CONTENT_BYTES,
 	DEFAULT_MAX_ROWS,
 	DxrApiError,
 	type DxrErrorKind,
+	decodeUtf8,
+	type FileContent,
 	getClassifications,
+	getFileContent,
 	getRedactedText,
 	getRedactors,
 	type ListFilesOutcome,

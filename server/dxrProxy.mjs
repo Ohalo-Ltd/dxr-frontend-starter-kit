@@ -70,6 +70,125 @@ async function serveFixtureJson(response, name) {
 	}
 }
 
+/** Finds one fixture row by id, for the content endpoints. */
+async function findFixtureRow(fileId) {
+	const lines = createInterface({
+		input: createReadStream(new URL("files.jsonl", fixturesDirectory)),
+		crlfDelay: Number.POSITIVE_INFINITY,
+	});
+	try {
+		for await (const line of lines) {
+			if (line.trim() === "") continue;
+			try {
+				const row = JSON.parse(line);
+				if (row.fileId === fileId) return row;
+			} catch {
+				// Skip an unparseable fixture line.
+			}
+		}
+	} finally {
+		lines.close();
+	}
+	return undefined;
+}
+
+/**
+ * Reads a content fixture.
+ *
+ * `fileId` is used as a file name, so it is validated against a strict pattern
+ * first. Without that check a crafted id could escape the fixtures directory.
+ */
+async function readContentFixture(fileId) {
+	if (!/^[A-Za-z0-9_-]{1,128}$/u.test(fileId)) return undefined;
+	try {
+		return await readFile(new URL(`content/${fileId}.txt`, fixturesDirectory));
+	} catch {
+		return undefined;
+	}
+}
+
+/** A minimal, valid PDF, so the active-content path is exercisable offline. */
+function syntheticPdf(title) {
+	const text = title.replace(/[()\\]/gu, "");
+	const body = `1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+4 0 obj<</Length 90>>stream
+BT /F1 11 Tf 20 70 Td (${text}) Tj 0 -18 Td (synthetic fixture) Tj ET
+endstream
+endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+`;
+	return Buffer.from(`%PDF-1.4\n${body}trailer<</Root 1 0 R>>\n%%EOF\n`, "latin1");
+}
+
+/**
+ * Serves `GET /api/v1/files/{id}/content` from fixtures.
+ *
+ * Text fixtures live in `fixtures/content/<fileId>.txt`. A PDF row with no text
+ * fixture gets a generated PDF so the download-only path can be demonstrated
+ * without committing a binary.
+ */
+async function serveFixtureContent(response, fileId) {
+	const row = await findFixtureRow(fileId);
+	if (row === undefined) {
+		sendApiError(response, 404, "No such file.");
+		return;
+	}
+
+	const text = await readContentFixture(fileId);
+	const body =
+		text ?? (row.mimeType === "application/pdf" ? syntheticPdf(row.fileName) : undefined);
+
+	if (body === undefined) {
+		// A real instance can also hold a file it cannot return bytes for.
+		sendApiError(response, 404, "No content fixture exists for this file.");
+		return;
+	}
+
+	response.writeHead(200, {
+		"cache-control": "no-store",
+		"content-disposition": `attachment; filename="${row.fileName.replace(/["\\]/gu, "")}"`,
+		"content-length": String(body.byteLength),
+		"content-type": row.mimeType ?? "application/octet-stream",
+	});
+	response.end(body);
+}
+
+/**
+ * Serves `GET /api/v1/files/{id}/redacted-text` from fixtures.
+ *
+ * Masking here is a crude stand-in for the real redactors — enough to show the
+ * difference between a redacted and an original view. Do not read it as the
+ * redaction behaviour of a live instance.
+ */
+async function serveFixtureRedactedText(response, fileId, redactorId) {
+	const row = await findFixtureRow(fileId);
+	if (row === undefined) {
+		sendApiError(response, 404, "No such file.");
+		return;
+	}
+
+	const text = await readContentFixture(fileId);
+	// An empty result is a normal outcome: discovery-only scans, unsupported
+	// formats, and image-only PDFs all produce no extractable text.
+	let redactedText = "";
+	if (text !== undefined) {
+		redactedText = text
+			.toString("utf8")
+			.replace(/[\w.+-]+@[\w.-]+\.\w{2,}/gu, "[REDACTED EMAIL]")
+			.replace(/\b\d{3}-\d{2}-\d{4}\b/gu, "[REDACTED ID]")
+			.replace(/\b0\d{3}\s?\d{6}\b/gu, "[REDACTED PHONE]");
+		// Redactor 2 in the fixtures is "Financial data only", so it leaves
+		// identifiers alone and only masks the account-shaped values.
+		if (redactorId === 2) {
+			redactedText = text.toString("utf8").replace(/\b\d{3}-\d{2}-\d{4}\b/gu, "[REDACTED ID]");
+		}
+	}
+
+	sendJson(response, 200, { status: "ok", data: { redactedText } });
+}
+
 /**
  * Streams matching fixture rows as JSONL.
  *
@@ -266,13 +385,30 @@ function createMiddleware(configuration) {
 			return;
 		}
 
-		// Content and redacted text are not simulated: there is no fixture document
-		// body, and inventing one would teach the wrong thing about file content.
-		sendApiError(
-			response,
-			501,
-			"Fixture mode does not serve file content. Set DXR_API_TOKEN to use a live instance.",
-		);
+		const contentMatch = /^\/api\/v1\/files\/([^/]+)\/content$/u.exec(url.pathname);
+		if (contentMatch !== null) {
+			serveFixtureContent(response, decodeURIComponent(contentMatch[1])).catch(() => {
+				if (!response.headersSent) sendApiError(response, 500, "Fixture content failed.");
+			});
+			return;
+		}
+
+		const redactedMatch = /^\/api\/v1\/files\/([^/]+)\/redacted-text$/u.exec(url.pathname);
+		if (redactedMatch !== null) {
+			const redactorId = Number(url.searchParams.get("redactor_id"));
+			if (!Number.isInteger(redactorId)) {
+				sendApiError(response, 400, "redactor_id is required and must be an integer.");
+				return;
+			}
+			serveFixtureRedactedText(response, decodeURIComponent(redactedMatch[1]), redactorId).catch(
+				() => {
+					if (!response.headersSent) sendApiError(response, 500, "Fixture redaction failed.");
+				},
+			);
+			return;
+		}
+
+		sendApiError(response, 404, "Not a Data X-Ray v1 endpoint.");
 	};
 }
 

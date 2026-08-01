@@ -96,6 +96,84 @@ test("opens a file detail panel without a further request", async ({ page }) => 
 	await expect(dialog).toBeHidden();
 });
 
+test("fetches no file content until the user asks for it", async ({ page }) => {
+	const contentRequests: string[] = [];
+	page.on("request", (request) => {
+		const path = new URL(request.url()).pathname;
+		if (/\/content$|\/redacted-text$/u.test(path)) contentRequests.push(path);
+	});
+
+	await page.goto("/");
+	await page.getByRole("button", { name: "Search" }).click();
+	await page.getByRole("button", { name: "new-starter-records.csv" }).click();
+
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toBeVisible();
+	// Opening the panel fetches nothing.
+	expect(contentRequests).toEqual([]);
+
+	// Nor does selecting the Content tab.
+	await dialog.getByRole("button", { name: "Content" }).click();
+	await expect(dialog.getByRole("heading", { name: "Redacted text" })).toBeVisible();
+	expect(contentRequests.filter((path) => path.endsWith("/content"))).toEqual([]);
+
+	// Only an explicit action does.
+	await dialog.getByRole("button", { name: "Load redacted text" }).click();
+	await expect(dialog.getByText(/REDACTED ID/).first()).toBeVisible();
+	expect(contentRequests.some((path) => path.endsWith("/redacted-text"))).toBe(true);
+});
+
+test("shows redacted text by default and warns before showing the original", async ({ page }) => {
+	await page.goto("/");
+	await page.getByRole("button", { name: "Search" }).click();
+	await page.getByRole("button", { name: "new-starter-records.csv" }).click();
+	const dialog = page.getByRole("dialog");
+	await dialog.getByRole("button", { name: "Content" }).click();
+
+	await dialog.getByRole("button", { name: "Load redacted text" }).click();
+	const redacted = dialog.locator(".detail-panel__text");
+	await expect(redacted).toContainText("[REDACTED ID]");
+	await expect(redacted).not.toContainText("432-11-8890");
+
+	await dialog.getByRole("button", { name: "View original text" }).click();
+	// The warning notice, not the standing caption above the buttons.
+	await expect(dialog.locator(".notice--warning .notice__title")).toHaveText("Unredacted");
+	await expect(dialog.locator(".detail-panel__text")).toContainText("432-11-8890");
+});
+
+test("never offers an inline view for an active format", async ({ page }) => {
+	await page.goto("/");
+	await page.getByRole("button", { name: "Search" }).click();
+	await page.getByRole("button", { name: "occupational-health-report.pdf" }).click();
+	const dialog = page.getByRole("dialog");
+	await dialog.getByRole("button", { name: "Content" }).click();
+
+	await expect(dialog.getByText("This format is never shown inline")).toBeVisible();
+	// Download is the only route to the bytes for a PDF.
+	await expect(dialog.getByRole("button", { name: "View original text" })).toHaveCount(0);
+	await expect(dialog.getByRole("button", { name: "Download original" })).toBeVisible();
+});
+
+test("downloads the original file without a content-security-policy violation", async ({
+	page,
+}) => {
+	const violations: string[] = [];
+	page.on("console", (message) => {
+		if (message.type() === "error") violations.push(message.text());
+	});
+
+	await page.goto("/");
+	await page.getByRole("button", { name: "Search" }).click();
+	await page.getByRole("button", { name: "new-starter-records.csv" }).click();
+	const dialog = page.getByRole("dialog");
+	await dialog.getByRole("button", { name: "Content" }).click();
+
+	const download = page.waitForEvent("download");
+	await dialog.getByRole("button", { name: "Download original" }).click();
+	expect((await download).suggestedFilename()).toBe("new-starter-records.csv");
+	expect(violations).toEqual([]);
+});
+
 test("warns that an unfiltered search returns truncated results", async ({ page }) => {
 	await page.goto("/");
 

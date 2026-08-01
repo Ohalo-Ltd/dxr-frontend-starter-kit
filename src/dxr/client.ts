@@ -157,6 +157,214 @@ export async function getRedactedText(
 	return typeof body.data?.redactedText === "string" ? body.data.redactedText : "";
 }
 
+/** Default ceiling for a single file body. Raise deliberately, per module. */
+export const DEFAULT_MAX_CONTENT_BYTES = 8 * 1024 * 1024;
+const CONTENT_TIMEOUT_MS = 120_000;
+
+/**
+ * How the browser is allowed to treat a file body.
+ *
+ * - `text`: safe to render as inert text.
+ * - `active`: carries scripting or a complex parser — HTML, SVG, PDF, Office,
+ *   archives. Never render it inline; hand it to the user as a download.
+ * - `binary`: anything else. Download only.
+ *
+ * This classifies by declared media type *and* by extension, because a
+ * datasource can report a generic type for a file whose name says otherwise.
+ * When the two disagree the more dangerous answer wins.
+ */
+export type ContentDisposition = "text" | "active" | "binary";
+
+const ACTIVE_MEDIA_TYPES = new Set([
+	"application/pdf",
+	"application/x-7z-compressed",
+	"application/vnd.ms-excel",
+	"application/vnd.ms-powerpoint",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/x-tar",
+	"application/zip",
+	"image/svg+xml",
+	"message/rfc822",
+	"text/html",
+	"text/xml",
+	"application/xml",
+	"application/xhtml+xml",
+]);
+
+const ACTIVE_EXTENSIONS =
+	/\.(?:pdf|docx?|xlsx?|pptx?|svg|html?|xhtml|xml|zip|7z|tar|gz|eml|msg|rtf|jar|iso)$/iu;
+
+const TEXT_MEDIA_TYPES = new Set([
+	"application/json",
+	"application/x-ndjson",
+	"application/jsonlines",
+	"text/csv",
+	"text/markdown",
+	"text/plain",
+	"text/tab-separated-values",
+]);
+
+export function classifyContent(mediaType: string, fileName: string): ContentDisposition {
+	const type = mediaType.split(";")[0]?.trim().toLocaleLowerCase() ?? "";
+
+	// Extension wins when it indicates active content: a mislabelled .svg served
+	// as text/plain is still active content.
+	if (ACTIVE_EXTENSIONS.test(fileName) || ACTIVE_MEDIA_TYPES.has(type)) return "active";
+	if (TEXT_MEDIA_TYPES.has(type)) return "text";
+	if (type.startsWith("text/")) return "text";
+	return "binary";
+}
+
+export type FileContent = Readonly<{
+	bytes: Uint8Array;
+	mediaType: string;
+	/** From Content-Disposition when present, else the caller's fallback. */
+	fileName: string;
+	disposition: ContentDisposition;
+}>;
+
+/** Reads the filename from Content-Disposition, rejecting path separators. */
+function parseDispositionFileName(header: string | null): string | undefined {
+	if (header === null) return undefined;
+	const match = /filename\*?=(?:UTF-8'')?"?([^";\n]+)"?/iu.exec(header);
+	const raw = match?.[1];
+	if (raw === undefined) return undefined;
+	let decoded = raw;
+	try {
+		decoded = decodeURIComponent(raw);
+	} catch {
+		// Not percent-encoded; use it as-is.
+	}
+	// A server-supplied name is untrusted: strip any path, and refuse traversal.
+	const base = decoded.split(/[/\\]/u).pop()?.trim() ?? "";
+	if (base === "" || base === "." || base === "..") return undefined;
+	return base;
+}
+
+/**
+ * Fetches the original bytes of a file.
+ *
+ * This is the most exposing call in the API, so it is deliberately awkward to
+ * use by accident: the caller must pass the file name and size it already has,
+ * and must decide what to do with the result.
+ *
+ * The byte cap is enforced **while streaming**, not after. A post-download check
+ * cannot prevent memory exhaustion, and `Content-Length` is a claim the server
+ * makes rather than a guarantee — so both are checked.
+ *
+ * Callers must not render the result inline unless `disposition` is `"text"`.
+ * See docs/dxr-public-api.md.
+ */
+export async function getFileContent(
+	fileId: string,
+	options: Readonly<{
+		fileName?: string;
+		maxBytes?: number;
+		signal?: AbortSignal;
+	}> = {},
+): Promise<FileContent> {
+	const maxBytes = options.maxBytes ?? DEFAULT_MAX_CONTENT_BYTES;
+	const timeoutSignal = AbortSignal.timeout(CONTENT_TIMEOUT_MS);
+	const combined =
+		options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
+
+	let response: Response;
+	try {
+		response = await fetch(`${API_ROOT}/files/${encodeURIComponent(fileId)}/content`, {
+			cache: "no-store",
+			credentials: "same-origin",
+			headers: { Accept: "*/*" },
+			redirect: "error",
+			signal: combined,
+		});
+	} catch {
+		if (options.signal?.aborted === true) {
+			throw new DxrApiError("aborted", "The download was cancelled.");
+		}
+		throw new DxrApiError("unavailable", "The file could not be reached.");
+	}
+
+	if (!response.ok) throw errorForStatus(response.status);
+
+	const declaredLength = response.headers.get("content-length");
+	if (declaredLength !== null && Number(declaredLength) > maxBytes) {
+		throw new DxrApiError(
+			"unavailable",
+			`This file is larger than the ${formatByteLimit(maxBytes)} limit this application will load.`,
+		);
+	}
+
+	const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+	const fileName =
+		parseDispositionFileName(response.headers.get("content-disposition")) ??
+		options.fileName ??
+		fileId;
+
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+
+	if (response.body === null) {
+		return {
+			bytes: new Uint8Array(0),
+			disposition: classifyContent(mediaType, fileName),
+			fileName,
+			mediaType,
+		};
+	}
+
+	const reader = response.body.getReader();
+	try {
+		while (true) {
+			const result = await reader.read();
+			if (result.done) break;
+			total += result.value.byteLength;
+			if (total > maxBytes) {
+				await reader.cancel();
+				throw new DxrApiError(
+					"unavailable",
+					`This file exceeded the ${formatByteLimit(maxBytes)} limit while downloading and was abandoned.`,
+				);
+			}
+			chunks.push(result.value);
+		}
+	} catch (error) {
+		if (options.signal?.aborted === true) {
+			throw new DxrApiError("aborted", "The download was cancelled.");
+		}
+		if (error instanceof DxrApiError) throw error;
+		throw new DxrApiError("unavailable", "The download failed part-way through.");
+	} finally {
+		await reader.cancel().catch(() => undefined);
+	}
+
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+
+	return { bytes, disposition: classifyContent(mediaType, fileName), fileName, mediaType };
+}
+
+function formatByteLimit(bytes: number): string {
+	return bytes >= 1024 * 1024 ? `${Math.round(bytes / (1024 * 1024))} MB` : `${bytes} bytes`;
+}
+
+/**
+ * Decodes bytes as UTF-8 for inert text rendering.
+ *
+ * Strict: invalid UTF-8 throws rather than being silently replaced, because a
+ * file full of replacement characters is a sign the caller is about to render
+ * something that is not text.
+ */
+export function decodeUtf8(bytes: Uint8Array): string {
+	return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 /**
  * Why a file stream stopped.
  *

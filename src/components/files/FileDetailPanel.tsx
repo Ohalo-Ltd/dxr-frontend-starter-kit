@@ -1,14 +1,18 @@
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Annotator, FileMetadata } from "../../dxr";
 import { Button, Nav, NavItem } from "../../ui";
+import { FileContentTab } from "./FileContentTab";
 import { formatBytes, formatDate, totalUniquePhrases } from "./FilesResultsTable";
 
-type TabId = "classifications" | "metadata" | "access";
+type TabId = "classifications" | "metadata" | "access" | "content";
 
 const tabs: ReadonlyArray<{ id: TabId; label: string }> = [
 	{ id: "classifications", label: "Classifications" },
 	{ id: "metadata", label: "Metadata" },
 	{ id: "access", label: "Access" },
+	// Last, and never the default: selecting it is the user intent that permits
+	// a content request. Opening the panel must not fetch a single byte.
+	{ id: "content", label: "Content" },
 ];
 
 type FileDetailPanelProps = Readonly<{
@@ -265,6 +269,10 @@ export function FileDetailPanel({ file, onClose }: FileDetailPanelProps) {
 							</section>
 						</div>
 					)}
+
+					{/* Mounted only once the tab is selected, so no content request can
+					    be issued by merely opening the panel. */}
+					{tab === "content" && <FileContentTab file={file} />}
 				</div>
 			</div>
 		</dialog>

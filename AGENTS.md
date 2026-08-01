@@ -54,6 +54,13 @@ Query-language rules are encoded in `src/dxr/kql.ts` with a test per rule. Each
 one corresponds to a real HTTP 400. If you change the compiler, extend
 `src/dxr/kql.test.ts` first.
 
+File content is the most exposing call in the API. Fetch it only on an explicit
+user action — never on open, never on tab selection. Redacted text is the default
+path; the unredacted original is a separate click behind its own warning.
+Classify by media type *and* file extension and let the more dangerous answer
+win; never render an active format (PDF, Office, SVG, HTML, XML, archive) inline.
+Cap the download while streaming, not after.
+
 ## Skill routing
 
 For any UI component, page, application shell, filter, results table, or detail
