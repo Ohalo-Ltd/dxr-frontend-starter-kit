@@ -49,6 +49,9 @@ export function FileContentTab({ file }: FileContentTabProps) {
 	const [redactors, setRedactors] = useState<readonly Redactor[]>([]);
 	const [redactorId, setRedactorId] = useState<number | undefined>(undefined);
 	const [redactorsError, setRedactorsError] = useState(false);
+	// Distinct from an empty list: "still loading" and "none exist" are different
+	// facts, and showing the second while the first is true is a lie.
+	const [redactorsLoading, setRedactorsLoading] = useState(true);
 	const [loaded, setLoaded] = useState<Loaded>({ kind: "idle" });
 	const inFlight = useRef<AbortController | undefined>(undefined);
 
@@ -63,10 +66,12 @@ export function FileContentTab({ file }: FileContentTabProps) {
 			.then((list) => {
 				setRedactors(list);
 				setRedactorId(list[0]?.id);
+				setRedactorsLoading(false);
 			})
 			.catch((error: unknown) => {
 				if (error instanceof DxrApiError && error.kind === "aborted") return;
 				setRedactorsError(true);
+				setRedactorsLoading(false);
 			});
 		return () => controller.abort();
 	}, []);
@@ -78,11 +83,26 @@ export function FileContentTab({ file }: FileContentTabProps) {
 		const controller = new AbortController();
 		inFlight.current = controller;
 		setLoaded({ kind: "loading", what });
+
+		// Every state write is guarded on this request still being the current
+		// one. A superseded request must never overwrite its replacement's state,
+		// and — the case that actually bit — a cancelled request must still clear
+		// the loading indicator, or the whole tab stays disabled forever.
+		const isCurrent = () => inFlight.current === controller;
+
 		try {
 			const next = await task(controller.signal);
-			if (!controller.signal.aborted) setLoaded(next);
+			if (isCurrent()) {
+				inFlight.current = undefined;
+				setLoaded(next);
+			}
 		} catch (error: unknown) {
-			if (error instanceof DxrApiError && error.kind === "aborted") return;
+			if (!isCurrent()) return;
+			inFlight.current = undefined;
+			if (error instanceof DxrApiError && error.kind === "aborted") {
+				setLoaded({ kind: "idle" });
+				return;
+			}
 			setLoaded({
 				kind: "error",
 				message: error instanceof DxrApiError ? error.message : "The content could not be loaded.",
@@ -185,7 +205,11 @@ export function FileContentTab({ file }: FileContentTabProps) {
 
 			<section>
 				<h3>Redacted text</h3>
-				{redactorsError ? (
+				{redactorsLoading ? (
+					<p className="status-text" role="status">
+						Loading redaction profiles…
+					</p>
+				) : redactorsError ? (
 					<Notice tone="warning" title="Redactors unavailable">
 						<p>The redaction profiles could not be loaded, so redacted text cannot be requested.</p>
 					</Notice>

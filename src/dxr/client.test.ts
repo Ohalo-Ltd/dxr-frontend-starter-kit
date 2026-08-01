@@ -3,7 +3,9 @@ import {
 	classifyContent,
 	DxrApiError,
 	decodeUtf8,
+	getClassifications,
 	getFileContent,
+	getRedactedText,
 	listFiles,
 	MAX_ROWS_LIMIT,
 } from "./client";
@@ -181,6 +183,84 @@ describe("listFiles", () => {
 		await expect(listFiles({ query: "q", signal: controller.signal })).rejects.toMatchObject({
 			kind: "aborted",
 		});
+	});
+});
+
+describe("bounded JSON reads", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("parses a normal JSON response", async () => {
+		mockFetch(
+			() =>
+				new Response(JSON.stringify({ status: "ok", data: [{ id: "a" }] }), {
+					headers: { "content-type": "application/json" },
+					status: 200,
+				}),
+		);
+
+		await expect(getClassifications()).resolves.toEqual([{ id: "a" }]);
+	});
+
+	it("abandons a JSON body that exceeds the cap with no Content-Length", async () => {
+		// The header is a claim, not a guarantee. A server that omits it must not
+		// be able to make the client buffer without limit.
+		let pulls = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulls += 1;
+				if (pulls > 5_000) {
+					controller.close();
+					return;
+				}
+				// 64 KiB per chunk: 5,000 chunks is well past the 4 MiB ceiling.
+				controller.enqueue(new Uint8Array(64 * 1024));
+			},
+		});
+		mockFetch(
+			() =>
+				new Response(stream, {
+					headers: { "content-type": "application/json" },
+					status: 200,
+				}),
+		);
+
+		await expect(getRedactedText("f1", 1)).rejects.toMatchObject({ kind: "unavailable" });
+		// It stopped part-way rather than reading everything first.
+		expect(pulls).toBeLessThan(5_000);
+	});
+
+	it("still rejects early when Content-Length declares an oversized body", async () => {
+		const spy = mockFetch(
+			() =>
+				new Response("{}", {
+					headers: { "content-length": String(64 * 1024 * 1024) },
+					status: 200,
+				}),
+		);
+
+		await expect(getClassifications()).rejects.toMatchObject({ kind: "unavailable" });
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it("decodes multi-byte characters split across chunk boundaries", async () => {
+		const payload = new TextEncoder().encode(JSON.stringify({ status: "ok", data: ["café"] }));
+		let offset = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (offset >= payload.byteLength) {
+					controller.close();
+					return;
+				}
+				// One byte at a time splits the é in half.
+				controller.enqueue(payload.slice(offset, offset + 1));
+				offset += 1;
+			},
+		});
+		mockFetch(() => new Response(stream, { status: 200 }));
+
+		await expect(getClassifications()).resolves.toEqual(["café"]);
 	});
 });
 

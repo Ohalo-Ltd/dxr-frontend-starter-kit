@@ -110,16 +110,54 @@ async function fetchJson<T>(path: string, signal: AbortSignal | undefined): Prom
 
 	if (!response.ok) throw errorForStatus(response.status);
 
-	const declaredLength = response.headers.get("content-length");
-	if (declaredLength !== null && Number(declaredLength) > MAX_JSON_BYTES) {
-		throw new DxrApiError("unavailable", "The response was larger than this client accepts.");
-	}
-
+	const text = await readBoundedText(response, MAX_JSON_BYTES);
 	try {
-		return (await response.json()) as T;
+		return JSON.parse(text) as T;
 	} catch {
 		throw new DxrApiError("unavailable", "The response was not valid JSON.");
 	}
+}
+
+/**
+ * Reads a response body as text, refusing to buffer more than `maxBytes`.
+ *
+ * `response.json()` and `response.text()` both buffer the whole body first, so
+ * a `Content-Length` check alone is not a limit — the header is a claim the
+ * server makes, and it can be absent or wrong. The running total is what
+ * actually bounds memory, exactly as the file-content path does.
+ */
+async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
+	const declaredLength = response.headers.get("content-length");
+	if (declaredLength !== null && Number(declaredLength) > maxBytes) {
+		throw new DxrApiError("unavailable", "The response was larger than this client accepts.");
+	}
+
+	if (response.body === null) return "";
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder("utf-8");
+	let text = "";
+	let total = 0;
+
+	try {
+		while (true) {
+			const result = await reader.read();
+			if (result.done) break;
+			total += result.value.byteLength;
+			if (total > maxBytes) {
+				await reader.cancel();
+				throw new DxrApiError(
+					"unavailable",
+					"The response exceeded the size this client accepts and was abandoned.",
+				);
+			}
+			text += decoder.decode(result.value, { stream: true });
+		}
+	} finally {
+		await reader.cancel().catch(() => undefined);
+	}
+
+	return text + decoder.decode();
 }
 
 /**
