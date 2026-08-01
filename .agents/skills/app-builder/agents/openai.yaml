@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build the app"
+  short_description: "Apply this kit's UI primitives, tokens, and API patterns safely"
+  default_prompt: "Use $app-builder to design or review this frontend feature."

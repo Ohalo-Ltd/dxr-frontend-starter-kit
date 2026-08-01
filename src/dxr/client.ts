@@ -1,0 +1,309 @@
+/**
+ * Client for the Data X-Ray external API, version 1.
+ *
+ * All requests are same-origin and relative. In development that is the proxy
+ * in `server/dxrProxy.mjs`; in production it must be an application backend on
+ * the same origin. The browser never holds an API token, so nothing here reads,
+ * stores, or sends an `Authorization` header — see docs/api-authentication.md.
+ *
+ * Two properties of the file endpoint shape this whole module:
+ *
+ * 1. It returns a JSONL stream with no envelope, no total count, and no
+ *    pagination. The only way to bound the work is to stop reading, which is
+ *    what `maxRows` does.
+ * 2. A broad query is truncated by the server mid-stream. That is reported as a
+ *    distinct outcome rather than folded into success, because presenting a
+ *    truncated result as complete is a correctness bug, not a cosmetic one.
+ */
+
+import type { ApiEnvelope, Classification, FileMetadata, Redactor } from "./types";
+
+const API_ROOT = "/api/v1";
+
+/** Absolute ceiling on rows per query, independent of what a caller asks for. */
+export const MAX_ROWS_LIMIT = 500;
+export const DEFAULT_MAX_ROWS = 200;
+
+const METADATA_TIMEOUT_MS = 30_000;
+/** Reset on every chunk: a healthy stream keeps producing data. */
+const CHUNK_TIMEOUT_MS = 30_000;
+const MAX_STREAM_BYTES = 32 * 1024 * 1024;
+const MAX_JSON_BYTES = 4 * 1024 * 1024;
+
+export type DxrErrorKind =
+	| "aborted"
+	| "denied"
+	| "invalid-query"
+	| "not-found"
+	| "timeout"
+	| "unavailable";
+
+/**
+ * A failure with a cause the UI can act on.
+ *
+ * The message is written for a person and never contains a response body: an
+ * upstream error string must not reach the DOM, even as text.
+ */
+export class DxrApiError extends Error {
+	readonly kind: DxrErrorKind;
+	readonly status: number | undefined;
+
+	constructor(kind: DxrErrorKind, message: string, status?: number) {
+		super(message);
+		this.name = "DxrApiError";
+		this.kind = kind;
+		this.status = status;
+	}
+}
+
+function errorForStatus(status: number): DxrApiError {
+	if (status === 400) {
+		return new DxrApiError(
+			"invalid-query",
+			"The server rejected the query. Check the field names and operators.",
+			status,
+		);
+	}
+	if (status === 401 || status === 403) {
+		return new DxrApiError(
+			"denied",
+			"Access was denied. The API credential may lack permission or have expired.",
+			status,
+		);
+	}
+	if (status === 404) {
+		return new DxrApiError("not-found", "The requested resource does not exist.", status);
+	}
+	if (status === 504 || status === 408) {
+		return new DxrApiError(
+			"timeout",
+			"The server timed out. The query is probably too broad for this instance.",
+			status,
+		);
+	}
+	return new DxrApiError("unavailable", "The API is unavailable.", status);
+}
+
+/** Combines a caller's signal with a timeout, and always clears the timer. */
+async function fetchJson<T>(path: string, signal: AbortSignal | undefined): Promise<T> {
+	const timeoutSignal = AbortSignal.timeout(METADATA_TIMEOUT_MS);
+	const combined = signal === undefined ? timeoutSignal : AbortSignal.any([signal, timeoutSignal]);
+
+	let response: Response;
+	try {
+		response = await fetch(`${API_ROOT}${path}`, {
+			cache: "no-store",
+			credentials: "same-origin",
+			headers: { Accept: "application/json" },
+			redirect: "error",
+			signal: combined,
+		});
+	} catch (error) {
+		if (signal?.aborted === true) {
+			throw new DxrApiError("aborted", "The request was cancelled.");
+		}
+		if (error instanceof DOMException && error.name === "TimeoutError") {
+			throw new DxrApiError("timeout", "The request timed out.");
+		}
+		throw new DxrApiError("unavailable", "The API could not be reached.");
+	}
+
+	if (!response.ok) throw errorForStatus(response.status);
+
+	const declaredLength = response.headers.get("content-length");
+	if (declaredLength !== null && Number(declaredLength) > MAX_JSON_BYTES) {
+		throw new DxrApiError("unavailable", "The response was larger than this client accepts.");
+	}
+
+	try {
+		return (await response.json()) as T;
+	} catch {
+		throw new DxrApiError("unavailable", "The response was not valid JSON.");
+	}
+}
+
+/**
+ * The classification catalog: every annotator, domain, label, and extractor the
+ * instance can detect. This is the query vocabulary — load it before offering
+ * filters, because searching by file name alone has poor recall against a
+ * corpus that is classified by content.
+ */
+export async function getClassifications(signal?: AbortSignal): Promise<readonly Classification[]> {
+	const body = await fetchJson<ApiEnvelope<readonly Classification[]>>("/classifications", signal);
+	return Array.isArray(body.data) ? body.data : [];
+}
+
+/** Redaction profiles available for `getRedactedText`. */
+export async function getRedactors(signal?: AbortSignal): Promise<readonly Redactor[]> {
+	const body = await fetchJson<ApiEnvelope<readonly Redactor[]>>("/redactors", signal);
+	return Array.isArray(body.data) ? body.data : [];
+}
+
+/**
+ * Redacted text for one file.
+ *
+ * An empty string is a normal result, not an error: a discovery-only scan, an
+ * unsupported format, or an image-only PDF all produce no extractable text.
+ */
+export async function getRedactedText(
+	fileId: string,
+	redactorId: number,
+	signal?: AbortSignal,
+): Promise<string> {
+	const body = await fetchJson<ApiEnvelope<{ redactedText?: string }>>(
+		`/files/${encodeURIComponent(fileId)}/redacted-text?redactor_id=${encodeURIComponent(String(redactorId))}`,
+		signal,
+	);
+	return typeof body.data?.redactedText === "string" ? body.data.redactedText : "";
+}
+
+/**
+ * Why a file stream stopped.
+ *
+ * - `complete`: the server ended the stream and every line parsed.
+ * - `capped`: this client stopped at `maxRows`. More matches exist.
+ * - `interrupted`: the server stopped mid-record, or the connection dropped.
+ *   The result is an unknown fraction of the matches and must be presented as
+ *   incomplete.
+ */
+export type ListFilesOutcome = "complete" | "capped" | "interrupted";
+
+export type ListFilesResult = Readonly<{
+	rows: readonly FileMetadata[];
+	outcome: ListFilesOutcome;
+	bytesRead: number;
+	/** Lines that were received whole but did not parse. */
+	malformedLines: number;
+}>;
+
+export type ListFilesOptions = Readonly<{
+	query: string;
+	maxRows?: number;
+	signal?: AbortSignal;
+	/** Called for each parsed row, so results can render as they arrive. */
+	onRow?: (row: FileMetadata, index: number) => void;
+}>;
+
+/**
+ * Streams `GET /api/v1/files`, stopping at `maxRows`.
+ *
+ * Rows are delivered through `onRow` as they parse and also returned in full,
+ * so a caller can render progressively without tracking state twice.
+ */
+export async function listFiles({
+	query,
+	maxRows = DEFAULT_MAX_ROWS,
+	signal,
+	onRow,
+}: ListFilesOptions): Promise<ListFilesResult> {
+	const cap = Math.max(1, Math.min(Math.trunc(maxRows), MAX_ROWS_LIMIT));
+
+	let response: Response;
+	try {
+		response = await fetch(`${API_ROOT}/files?q=${encodeURIComponent(query)}`, {
+			cache: "no-store",
+			credentials: "same-origin",
+			headers: { Accept: "application/jsonlines, application/json" },
+			redirect: "error",
+			signal: signal ?? null,
+		});
+	} catch {
+		if (signal?.aborted === true) {
+			throw new DxrApiError("aborted", "The search was cancelled.");
+		}
+		throw new DxrApiError("unavailable", "The API could not be reached.");
+	}
+
+	if (!response.ok) throw errorForStatus(response.status);
+	if (response.body === null) {
+		return { bytesRead: 0, malformedLines: 0, outcome: "complete", rows: [] };
+	}
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder("utf-8");
+	const rows: FileMetadata[] = [];
+	let buffer = "";
+	let bytesRead = 0;
+	let malformedLines = 0;
+	let outcome: ListFilesOutcome = "complete";
+
+	/** Returns false once the cap is reached. */
+	const pushLine = (line: string): boolean => {
+		const trimmed = line.trim();
+		if (trimmed === "") return true;
+		try {
+			const row = JSON.parse(trimmed) as FileMetadata;
+			// A row without an id cannot be identified, selected, or fetched later.
+			if (typeof row.fileId !== "string" || row.fileId === "") {
+				malformedLines += 1;
+				return true;
+			}
+			rows.push(row);
+			onRow?.(row, rows.length - 1);
+		} catch {
+			malformedLines += 1;
+		}
+		return rows.length < cap;
+	};
+
+	try {
+		let reading = true;
+		while (reading) {
+			const chunkTimeout = AbortSignal.timeout(CHUNK_TIMEOUT_MS);
+			const result = await Promise.race([
+				reader.read(),
+				new Promise<never>((_resolve, reject) => {
+					chunkTimeout.addEventListener("abort", () =>
+						reject(new DxrApiError("timeout", "The stream stalled and was abandoned.")),
+					);
+				}),
+			]);
+
+			if (result.done) {
+				// A non-empty tail means the server stopped part-way through a record.
+				if (buffer.trim() !== "") {
+					if (!pushLine(buffer)) {
+						outcome = "capped";
+					} else if (malformedLines > 0) {
+						outcome = "interrupted";
+					}
+				}
+				break;
+			}
+
+			bytesRead += result.value.byteLength;
+			if (bytesRead > MAX_STREAM_BYTES) {
+				outcome = "interrupted";
+				break;
+			}
+
+			buffer += decoder.decode(result.value, { stream: true });
+			let newlineIndex = buffer.indexOf("\n");
+			while (newlineIndex !== -1) {
+				const line = buffer.slice(0, newlineIndex);
+				buffer = buffer.slice(newlineIndex + 1);
+				if (!pushLine(line)) {
+					outcome = "capped";
+					reading = false;
+					break;
+				}
+				newlineIndex = buffer.indexOf("\n");
+			}
+		}
+	} catch (error) {
+		if (signal?.aborted === true) {
+			throw new DxrApiError("aborted", "The search was cancelled.");
+		}
+		if (error instanceof DxrApiError && error.kind === "timeout") {
+			// Rows already parsed are still usable; report them as incomplete.
+			outcome = "interrupted";
+		} else {
+			outcome = "interrupted";
+		}
+	} finally {
+		// Cancelling releases the connection when we stopped early by choice.
+		await reader.cancel().catch(() => undefined);
+	}
+
+	return { bytesRead, malformedLines, outcome, rows };
+}

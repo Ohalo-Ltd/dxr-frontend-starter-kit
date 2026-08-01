@@ -1,0 +1,158 @@
+/*
+ * Semantic design tokens.
+ *
+ * This is the whole theming contract: application CSS and the `src/ui`
+ * primitives reference only these `--app-*` custom properties, never a raw
+ * colour, font stack, or pixel value. Rebrand by editing this file alone.
+ *
+ * `public/theme.js` stamps `color-scheme` on <html> before first paint, so the
+ * dark values below apply without a flash. The `prefers-color-scheme` block is
+ * the no-JavaScript fallback.
+ */
+
+:root {
+	color-scheme: light;
+
+	/* Type */
+	--app-body-font-family:
+		system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	--app-header-font-family: var(--app-body-font-family);
+	--app-font-size-s1: 0.8125rem;
+	--app-font-size-m: 0.9375rem;
+	--app-font-size-l1: 1.0625rem;
+	--app-font-size-l3: 1.375rem;
+	--app-font-weight-600: 600;
+	--app-line-height: 1.5;
+
+	/* Spacing scale */
+	--app-space-1: 0.25rem;
+	--app-space-2: 0.5rem;
+	--app-space-3: 0.75rem;
+	--app-space-4: 1rem;
+	--app-space-5: 1.25rem;
+	--app-space-6: 1.5rem;
+	--app-space-10: 2.5rem;
+	--app-space-inset: 0.75rem;
+	--app-space-stack: 1rem;
+	--app-space-stack-lg: 2rem;
+	--app-space-page-padding: 1.5rem;
+	--app-input-btn-padding-x: 0.75rem;
+	--app-input-btn-padding-y: 0.4375rem;
+	--app-button-row-gap: 0.5rem;
+	--app-vnav-tabs-padding-x: 0.625rem;
+	--app-vnav-tabs-padding-y: 0.4375rem;
+
+	/* Shape, elevation, motion */
+	--app-border-width: 1px;
+	--app-box-radius-md: 7px;
+	--app-box-shadow-type: 0 1px 2px;
+	--app-transition-duration: 160ms;
+	--app-transition-function: cubic-bezier(0.4, 0, 0.2, 1);
+
+	/* Colour — light */
+	--app-surface: #ffffff;
+	--app-surface-subtle: #f4f5f7;
+	--app-surface-readonly: #f0f1f4;
+	--app-text: #16181d;
+	--app-text-muted: #5b6270;
+	--app-border: #d9dce2;
+	--app-border-strong: #b9bec8;
+	--app-shadow: rgba(16, 18, 23, 0.12);
+	--app-backdrop: rgba(16, 18, 23, 0.45);
+	--app-accent: #2f4bd8;
+	--app-accent-border: #9daaee;
+	--app-accent-surface: #eef1fd;
+	--app-on-accent-surface: #1c2f95;
+	--app-danger: #b3261e;
+	--app-danger-border: #e8a9a5;
+	--app-danger-surface: #fdeeed;
+	--app-warning: #8a5300;
+	--app-warning-border: #e8cb9b;
+	--app-warning-surface: #fdf4e6;
+	--app-success: #1c6b45;
+	--app-success-border: #9fd0b8;
+	--app-success-surface: #ecf7f1;
+	--app-focus-ring: #2f4bd8;
+}
+
+:root[color-scheme="dark"] {
+	color-scheme: dark;
+
+	--app-surface: #1b1e24;
+	--app-surface-subtle: #13151a;
+	--app-surface-readonly: #23272f;
+	--app-text: #e8eaee;
+	--app-text-muted: #a0a7b4;
+	--app-border: #343945;
+	--app-border-strong: #4b5261;
+	--app-shadow: rgba(0, 0, 0, 0.5);
+	--app-backdrop: rgba(0, 0, 0, 0.6);
+	--app-accent: #9fb0f7;
+	--app-accent-border: #47539c;
+	--app-accent-surface: #232a48;
+	--app-on-accent-surface: #d3dbfd;
+	--app-danger: #f2b8b5;
+	--app-danger-border: #8c3a35;
+	--app-danger-surface: #2e1d1c;
+	--app-warning: #e8c68a;
+	--app-warning-border: #6d5525;
+	--app-warning-surface: #2c2418;
+	--app-success: #a5d6bb;
+	--app-success-border: #35604b;
+	--app-success-surface: #1a2620;
+	--app-focus-ring: #9fb0f7;
+}
+
+/* No-JavaScript fallback: honour the OS preference until theme.js stamps the
+   attribute. An explicit color-scheme="light" still wins. */
+@media (prefers-color-scheme: dark) {
+	:root:not([color-scheme="light"]) {
+		color-scheme: dark;
+
+		--app-surface: #1b1e24;
+		--app-surface-subtle: #13151a;
+		--app-surface-readonly: #23272f;
+		--app-text: #e8eaee;
+		--app-text-muted: #a0a7b4;
+		--app-border: #343945;
+		--app-border-strong: #4b5261;
+		--app-shadow: rgba(0, 0, 0, 0.5);
+		--app-backdrop: rgba(0, 0, 0, 0.6);
+		--app-accent: #9fb0f7;
+		--app-accent-border: #47539c;
+		--app-accent-surface: #232a48;
+		--app-on-accent-surface: #d3dbfd;
+		--app-danger: #f2b8b5;
+		--app-danger-border: #8c3a35;
+		--app-danger-surface: #2e1d1c;
+		--app-warning: #e8c68a;
+		--app-warning-border: #6d5525;
+		--app-warning-surface: #2c2418;
+		--app-success: #a5d6bb;
+		--app-success-border: #35604b;
+		--app-success-surface: #1a2620;
+		--app-focus-ring: #9fb0f7;
+	}
+}
+
+html {
+	font-family: var(--app-body-font-family);
+	font-size: 16px;
+	line-height: var(--app-line-height);
+}
+
+body {
+	font-size: var(--app-font-size-m);
+}
+
+/* One visible focus treatment for every interactive element. Never remove it. */
+:focus-visible {
+	outline: 2px solid var(--app-focus-ring);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--app-transition-duration: 1ms;
+	}
+}

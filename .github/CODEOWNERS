@@ -1,0 +1,6 @@
+# Every change requires review from the FDE team.
+#
+# This repository is public and accepts pull requests from outside contributors.
+# Code-owner review is what keeps approval authority with Ohalo staff: only a
+# review from a member of this team satisfies the requirement on `main`.
+* @Ohalo-Ltd/fde

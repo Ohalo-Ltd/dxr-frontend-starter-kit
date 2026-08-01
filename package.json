@@ -1,0 +1,45 @@
+{
+	"name": "dxr-frontend-starter-kit",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Security-first React starter for applications built on the Data X-Ray public API",
+	"type": "module",
+	"packageManager": "npm@12.0.1",
+	"engines": {
+		"node": "24.15.0",
+		"npm": "12.0.1"
+	},
+	"scripts": {
+		"build": "tsc --build && vite build",
+		"check": "npm run verify:toolchain && npm run format:check && npm run typecheck && npm run test && npm run build",
+		"dev": "vite --host 127.0.0.1",
+		"format": "biome check --write .",
+		"format:check": "biome check .",
+		"preview": "vite preview --host 127.0.0.1",
+		"security:audit": "npm audit --audit-level=high",
+		"security:licenses": "node scripts/check-licenses.mjs",
+		"security:lock": "node scripts/verify-lockfile.mjs",
+		"test": "vitest run",
+		"test:e2e": "npm run build && playwright test",
+		"typecheck": "tsc --build --pretty false",
+		"verify:toolchain": "node scripts/verify-toolchain.mjs"
+	},
+	"dependencies": {
+		"react": "19.2.8",
+		"react-dom": "19.2.8"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.4",
+		"@playwright/test": "1.61.1",
+		"@testing-library/jest-dom": "7.0.0",
+		"@testing-library/react": "16.3.2",
+		"@types/react": "19.2.17",
+		"@types/react-dom": "19.2.3",
+		"@vitejs/plugin-react": "6.0.3",
+		"happy-dom": "20.11.0",
+		"typescript": "7.0.2",
+		"vite": "8.1.5",
+		"vitest": "4.1.10"
+	},
+	"allowScripts": {}
+}

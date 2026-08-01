@@ -1,0 +1,146 @@
+{
+	"status": "ok",
+	"data": [
+		{
+			"id": "dm-01",
+			"name": "PII",
+			"type": "ANNOTATOR_DOMAIN",
+			"subtype": "NONE",
+			"description": "Personally identifiable information.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/dm-01"
+		},
+		{
+			"id": "dm-02",
+			"name": "Financially Sensitive",
+			"type": "ANNOTATOR_DOMAIN",
+			"subtype": "NONE",
+			"description": "Payment instruments, account identifiers, and financial records.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/dm-02"
+		},
+		{
+			"id": "dm-03",
+			"name": "Health Information",
+			"type": "ANNOTATOR_DOMAIN",
+			"subtype": "NONE",
+			"description": "Clinical and occupational health data.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/dm-03"
+		},
+		{
+			"id": "an-01",
+			"name": "Credit card",
+			"type": "ANNOTATOR",
+			"subtype": "REGEX",
+			"description": "Payment card numbers validated with a Luhn check.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2026-02-18T11:20:00Z",
+			"link": "/classifications/an-01",
+			"searchLink": "/search?q=annotators.name%3A%22Credit%20card%22"
+		},
+		{
+			"id": "an-02",
+			"name": "IBAN",
+			"type": "ANNOTATOR",
+			"subtype": "REGEX",
+			"description": "International bank account numbers.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-09-02T08:00:00Z",
+			"link": "/classifications/an-02"
+		},
+		{
+			"id": "an-03",
+			"name": "Email address",
+			"type": "ANNOTATOR",
+			"subtype": "REGEX",
+			"description": "Email addresses appearing in file content.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/an-03"
+		},
+		{
+			"id": "an-04",
+			"name": "Social Security number",
+			"type": "ANNOTATOR",
+			"subtype": "REGEX",
+			"description": "United States Social Security numbers.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/an-04"
+		},
+		{
+			"id": "an-05",
+			"name": "Medical diagnosis",
+			"type": "ANNOTATOR",
+			"subtype": "NAMED_ENTITY",
+			"description": "Diagnostic terms recognised by a clinical named-entity model.",
+			"createdAt": "2025-03-14T09:00:00Z",
+			"updatedAt": "2026-04-01T15:45:00Z",
+			"link": "/classifications/an-05"
+		},
+		{
+			"id": "lb-01",
+			"name": "Confidential",
+			"type": "LABEL",
+			"subtype": "STANDARD",
+			"description": "Applied to records restricted to a named team.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/lb-01"
+		},
+		{
+			"id": "lb-02",
+			"name": "Personal data",
+			"type": "LABEL",
+			"subtype": "SMART",
+			"description": "Applied automatically when a PII annotator matches.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2026-01-22T10:10:00Z",
+			"link": "/classifications/lb-02"
+		},
+		{
+			"id": "lb-03",
+			"name": "Retention review",
+			"type": "LABEL",
+			"subtype": "STANDARD",
+			"description": "Queued for a retention decision.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/lb-03"
+		},
+		{
+			"id": "lb-04",
+			"name": "Legal hold",
+			"type": "LABEL",
+			"subtype": "STANDARD",
+			"description": "Preserved for litigation; deletion is blocked.",
+			"createdAt": "2025-01-06T09:00:00Z",
+			"updatedAt": "2025-01-06T09:00:00Z",
+			"link": "/classifications/lb-04"
+		},
+		{
+			"id": "em-01",
+			"name": "Document Type",
+			"type": "EXTRACTOR",
+			"subtype": "SMART",
+			"description": "Classifies the document into a business document type.",
+			"createdAt": "2025-06-01T09:00:00Z",
+			"updatedAt": "2026-05-11T09:30:00Z",
+			"link": "/classifications/em-01"
+		},
+		{
+			"id": "em-02",
+			"name": "Contract Party",
+			"type": "EXTRACTOR",
+			"subtype": "SMART",
+			"description": "Extracts the counterparty named in a contract.",
+			"createdAt": "2025-06-01T09:00:00Z",
+			"updatedAt": "2026-05-11T09:30:00Z",
+			"link": "/classifications/em-02"
+		}
+	]
+}

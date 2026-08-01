@@ -1,0 +1,124 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-security:
+    name: Workflow security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read # Let zizmor inspect workflow metadata.
+      contents: read
+      security-events: write # Upload workflow findings to Code Scanning.
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Audit workflows
+        uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
+        with:
+          persona: pedantic
+          version: 1.28.0
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read # Let CodeQL inspect workflow run metadata.
+      contents: read
+      security-events: write # Upload CodeQL SARIF to Code Scanning.
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: javascript-typescript
+          queries: security-extended,security-and-quality
+      - name: Analyze
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:javascript-typescript
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          deny-licenses: AGPL-1.0-only,AGPL-1.0-or-later,AGPL-3.0-only,AGPL-3.0-or-later,SSPL-1.0
+
+  container:
+    name: Container vulnerabilities
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read # Let SARIF upload inspect workflow run metadata.
+      contents: read
+      security-events: write # Upload container SARIF to Code Scanning.
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build container for scanning
+        env:
+          IMAGE: starter-kit-security-scan:${{ github.sha }}
+        run: docker build --pull --file deploy/docker/Dockerfile --tag "${IMAGE}" .
+      - name: Scan container
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: starter-kit-security-scan:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+          output-file: build/container-scan.sarif
+      - name: Upload container SARIF
+        if: always() && hashFiles('build/container-scan.sarif') != ''
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: build/container-scan.sarif
+          category: /container/frontend-app

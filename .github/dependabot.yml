@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    groups:
+      runtime:
+        dependency-type: production
+      development:
+        dependency-type: development
+    insecure-external-code-execution: deny
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      container-bases:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
